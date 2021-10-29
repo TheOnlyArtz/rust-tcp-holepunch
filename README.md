@@ -31,6 +31,9 @@ running the server on a VPS **(without a NAT!!!!)**
 ```
 ./client.exe
 ```
+##### How it looks in Wireshark
+![image](https://user-images.githubusercontent.com/30025874/139489923-10f50ea0-ca83-47c6-80f2-8f187725db22.png)
+
 
 The peers may now communicate with each other.
 you may close the rendezvous server and watch as they speak without the need of port-forwarding!
