@@ -105,7 +105,7 @@ fn main() -> std::io::Result<()> {
     let port = cli.port.unwrap_or(3000.to_owned());
     let (ip_type, default_ip) = if cli.enable_ipv6 { (IPType::V6, "0:0:0:0:0:0:0:1") } else { (IPType::V4, "127.0.0.1") };
     let ip = cli.ip.unwrap_or(default_ip.to_owned());
-    println!("[CONFIG] IP Type: {:?}, Addr: {}:{}", ip_type, ip, port);
+    println!("[CONFIG] IP Type: {:?}, Addr: {}, Port:{}", ip_type, ip, port);
 
     let listener = TcpListener::bind(format!("{}:{}", ip, port))?;
     let peers: Arc<Mutex<Vec<Peer>>> = Arc::new(Mutex::new(Vec::<Peer>::new()));
