@@ -1,14 +1,39 @@
 // use std::net::{SocketAddr, TcpListener};
 // use socket2::{Socket, Domain, Type};
+use clap::Parser;
 use net2::TcpBuilder;
 use std::io::prelude::*;
 use std::sync::{Arc, Mutex};
 
+#[derive(Parser, Debug)]
+#[clap(name = "Tcp-PunchHole-Client", version, author, about = "A Tcp-PunchHole-Client")]
+struct Cli {
+    #[clap(long)]
+    ip: Option<String>,
+    #[clap(long)]
+    port: Option<u16>,
+    #[clap(long, takes_value = false)]
+    enable_ipv6: bool
+}
+
+#[derive(Clone, Copy, Debug)]
+enum IPType{
+    V4,
+    V6
+}
+
 fn main() -> std::io::Result<()> {
-    let connection_builder = TcpBuilder::new_v4()?;
+    let cli = Cli::parse();
+
+    let port = cli.port.unwrap_or(3000.to_owned());
+    let (ip_type, default_ip) = if cli.enable_ipv6 { (IPType::V6, "0:0:0:0:0:0:0:1") } else { (IPType::V4, "127.0.0.1") };
+    let ip = cli.ip.unwrap_or(default_ip.to_owned());
+    println!("[CONFIG] IP Type: {:?}, Addr: {}, Port:{}", ip_type, ip, port);
+
+    let connection_builder = tcp_builder(&ip_type)?;
     connection_builder.reuse_address(true).unwrap();
 
-    let mut stream = connection_builder.connect("178.128.32.250:3000")?;
+    let mut stream = connection_builder.connect(format!("{}:{}", ip, port))?;
 
     let formatted_msg = format!(
         "{}:{}",
@@ -41,7 +66,7 @@ fn main() -> std::io::Result<()> {
                 "[LISTENING] on the same port used to connect to S {}",
                 listen_on
             );
-            listen(listen_on).unwrap();
+            listen(listen_on, &ip_type).unwrap();
         });
 
         // PUBLIC
@@ -54,7 +79,7 @@ fn main() -> std::io::Result<()> {
             let connect_to = ips.get(0).unwrap();
             let laddr = cloned_stream.local_addr().unwrap().to_string();
 
-            connect(&laddr, connect_to, connection_established, "public").unwrap();
+            connect(&laddr, connect_to, connection_established, "public", &ip_type).unwrap();
         });
 
         // PRIVATE
@@ -66,7 +91,7 @@ fn main() -> std::io::Result<()> {
             let connect_to = ips.get(1).unwrap();
             let laddr = cloned_stream.local_addr().unwrap().to_string();
 
-            connect(&laddr, connect_to, connection_established_clone, "private").unwrap();
+            connect(&laddr, connect_to, connection_established_clone, "private", &ip_type).unwrap();
         });
     }
 
@@ -78,8 +103,9 @@ fn connect(
     ip: &str,
     connection_established: Arc<Mutex<bool>>,
     flag: &'static str,
+    ip_type: &IPType
 ) -> std::io::Result<()> {
-    let connection_builder = TcpBuilder::new_v4()?;
+    let connection_builder = tcp_builder(ip_type)?;
     connection_builder.reuse_address(true).unwrap();
     connection_builder.bind(laddr).unwrap();
 
@@ -129,8 +155,8 @@ fn connect(
     Ok(())
 }
 
-fn listen(ip: String) -> std::io::Result<()> {
-    let server_builder = TcpBuilder::new_v4()?;
+fn listen(ip: String, ip_type :&IPType) -> std::io::Result<()> {
+    let server_builder = tcp_builder(ip_type)?;
     println!("Listening b: {}", ip);
     server_builder
         .reuse_address(true)
@@ -149,4 +175,11 @@ fn listen(ip: String) -> std::io::Result<()> {
         );
     }
     Ok(())
+}
+
+fn tcp_builder(ip_type: &IPType) -> std::io::Result<TcpBuilder> {
+    match ip_type {
+        IPType::V4 => {TcpBuilder::new_v4()}
+        IPType::V6 => {TcpBuilder::new_v6()}
+    }
 }

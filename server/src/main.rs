@@ -1,8 +1,26 @@
+use clap::Parser;
 use std::collections::HashMap;
 use std::io::prelude::*;
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{channel, Sender};
+
+#[derive(Parser, Debug)]
+#[clap(name = "Tcp-PunchHole-Server", version, author, about = "A Tcp-PunchHole-Server")]
+struct Cli {
+    #[clap(long)]
+    ip: Option<String>,
+    #[clap(long)]
+    port: Option<u16>,
+    #[clap(long, takes_value = false)]
+    enable_ipv6: bool
+}
+
+#[derive(Clone, Copy, Debug)]
+enum IPType{
+    V4,
+    V6
+}
 
 #[derive(Debug, Clone)]
 struct Peer {
@@ -18,7 +36,7 @@ fn handle_client(mut socket: TcpStream, peers: Arc<Mutex<Vec<Peer>>>, hosts_tx: 
     loop {
         let mut buf = [0; 1024];
         let size = socket.read(&mut buf);
-        
+
         if buf.len() == 0 || size.is_err() {
             let mut lock = peers.lock().unwrap();
             let mut iter = lock.iter();
@@ -36,18 +54,14 @@ fn handle_client(mut socket: TcpStream, peers: Arc<Mutex<Vec<Peer>>>, hosts_tx: 
             return Ok(());
         }
 
-        let buf = String::from_utf8(buf[..size.unwrap()].to_vec()).unwrap();
-
-        println!("[INCOMING] from {} => {}", socket.peer_addr().unwrap(), buf);
-
-        let mut local_elements = buf.split(":");
         // since it's a POC - it needs to be set and done so let us assume
-        // that the message looks like xxx.xxx.xxx.xxx:ppppp
-        let local_address = local_elements.next().unwrap();
-        let local_port = local_elements.next().unwrap();
+        // that the message looks like xxx.xxx.xxx.xxx:ppppp or x:x:x:x:x:x:x:x:ppppp
+        let (local_address, local_port) = ip_parser(String::from_utf8(buf[..size.unwrap()].to_vec()).unwrap());
+
+        println!("[INCOMING] from {} => [{}]:{}", socket.peer_addr().unwrap(), local_address, local_port);
 
         let peer = Peer {
-            local_address: local_address.to_string(),
+            local_address,
             local_port: local_port.parse::<u16>().unwrap(),
 
             remote_address: socket.peer_addr().unwrap().ip().to_string(),
@@ -79,8 +93,21 @@ fn handle_client(mut socket: TcpStream, peers: Arc<Mutex<Vec<Peer>>>, hosts_tx: 
     }
 }
 
+fn ip_parser(buf: String) -> (String, String) {
+    let (ip, port) = buf.split_at(buf.rfind(":").unwrap());
+    (ip.to_owned(), port.split_at(1).1.to_owned())
+}
+
 fn main() -> std::io::Result<()> {
-    let listener = TcpListener::bind("178.128.32.250:3000")?;
+
+    let cli = Cli::parse();
+
+    let port = cli.port.unwrap_or(3000.to_owned());
+    let (ip_type, default_ip) = if cli.enable_ipv6 { (IPType::V6, "0:0:0:0:0:0:0:1") } else { (IPType::V4, "127.0.0.1") };
+    let ip = cli.ip.unwrap_or(default_ip.to_owned());
+    println!("[CONFIG] IP Type: {:?}, Addr: {}, Port:{}", ip_type, ip, port);
+
+    let listener = TcpListener::bind(format!("{}:{}", ip, port))?;
     let peers: Arc<Mutex<Vec<Peer>>> = Arc::new(Mutex::new(Vec::<Peer>::new()));
     let connections: Arc<Mutex<HashMap<String, TcpStream>>> = Arc::new(Mutex::new(HashMap::<String, TcpStream>::new()));
     let (hosts_tx, hosts_rx) = channel::<(String, String)>();
